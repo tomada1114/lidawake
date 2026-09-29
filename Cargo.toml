@@ -1,0 +1,13 @@
+[package]
+name = "lidawake"
+version = "0.1.0"
+edition = "2024"
+description = "A macOS menu bar app that toggles whether the Mac may sleep (Rust port of sleep-toggle-menu)"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+tao = { version = "0.37.1", default-features = false }
+tray-icon = { version = "0.25.1", default-features = false }

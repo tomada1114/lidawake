@@ -1,0 +1,19 @@
+#!/bin/zsh
+
+set -euo pipefail
+
+if [[ "$#" -ne 1 ]] || [[ "$1" != "0" && "$1" != "1" ]]; then
+  print -u2 "usage: lidawake-helper 0|1"
+  exit 64
+fi
+
+desired="$1"
+/usr/bin/pmset -a disablesleep "${desired}"
+
+actual="$(/usr/bin/pmset -g | /usr/bin/awk '$1 == "SleepDisabled" { print $2; exit }')"
+if [[ "${actual}" != "${desired}" ]]; then
+  print -u2 "SleepDisabled did not change to ${desired}"
+  exit 1
+fi
+
+print "${actual}"
