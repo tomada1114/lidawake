@@ -170,8 +170,8 @@ impl App {
     }
 
     fn update_appearance(&self) {
+        // 切替中はアイコンを変えない。文字を足すと幅が変わり、アイコンが横に動いてしまうため。
         if self.is_changing {
-            self.tray.set_title(Some("…"));
             let _ = self.tray.set_tooltip(Some("スリープ設定を変更しています"));
             self.toggle_item.set_enabled(false);
             return;
