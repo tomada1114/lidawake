@@ -6,7 +6,9 @@ use tao::event_loop::EventLoopProxy;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
-use crate::audio::{self, MuteState};
+use crate::audio;
+use crate::auto_mute::{self, MuteAction, MuteReasons};
+use crate::lid;
 use crate::power::{self, SleepPermission};
 use crate::quiet_hours;
 
@@ -26,8 +28,8 @@ pub struct App {
     sleepy_icon: Icon,
     permission: SleepPermission,
     is_changing: bool,
-    last_quiet_hours_decision: Option<bool>,
-    did_mute_for_quiet_hours: bool,
+    last_mute_reasons: Option<MuteReasons>,
+    did_auto_mute: bool,
     proxy: EventLoopProxy<UserEvent>,
 }
 
@@ -68,8 +70,8 @@ impl App {
             sleepy_icon,
             permission: SleepPermission::Unknown,
             is_changing: false,
-            last_quiet_hours_decision: None,
-            did_mute_for_quiet_hours: false,
+            last_mute_reasons: None,
+            did_auto_mute: false,
             proxy,
         };
         app.refresh();
@@ -109,12 +111,12 @@ impl App {
         }
         self.permission = power::current_permission();
         self.update_appearance();
-        self.sync_mute_with_quiet_hours();
+        self.sync_auto_mute();
     }
 
     /// 終了前の後始末。自動ミュートしたままなら解除する。
     pub fn shutdown(&mut self) {
-        if self.did_mute_for_quiet_hours {
+        if self.did_auto_mute {
             let _ = audio::set_muted(false);
         }
     }
@@ -144,29 +146,44 @@ impl App {
         });
     }
 
-    fn sync_mute_with_quiet_hours(&mut self) {
-        let should_mute = quiet_hours::should_mute_now();
-        if Some(should_mute) == self.last_quiet_hours_decision {
+    fn sync_auto_mute(&mut self) {
+        let previous = self.last_mute_reasons;
+        // 蓋や画面の状態を判定できないときは、前回の判定を引き継ぐ。
+        let screens_off =
+            lid::all_screens_off(lid::current_lid_state(), lid::has_external_display())
+                .unwrap_or_else(|| previous.is_some_and(|reasons| reasons.screens_off));
+        let current = MuteReasons {
+            quiet_hours: quiet_hours::should_mute_now(),
+            screens_off,
+        };
+        if Some(current) == previous {
             return;
         }
 
-        if should_mute {
-            if audio::current_mute_state() == MuteState::Unmuted {
+        match auto_mute::decide(
+            previous,
+            current,
+            self.did_auto_mute,
+            audio::current_mute_state(),
+        ) {
+            MuteAction::Mute => {
                 if let Err(message) = audio::set_muted(true) {
                     eprintln!("ミュートに失敗しました: {message}");
                     return;
                 }
-                self.did_mute_for_quiet_hours = true;
+                self.did_auto_mute = true;
             }
-        } else if self.did_mute_for_quiet_hours {
-            if let Err(message) = audio::set_muted(false) {
-                eprintln!("ミュート解除に失敗しました: {message}");
-                return;
+            MuteAction::Unmute => {
+                if let Err(message) = audio::set_muted(false) {
+                    eprintln!("ミュート解除に失敗しました: {message}");
+                    return;
+                }
+                self.did_auto_mute = false;
             }
-            self.did_mute_for_quiet_hours = false;
+            MuteAction::Keep => {}
         }
 
-        self.last_quiet_hours_decision = Some(should_mute);
+        self.last_mute_reasons = Some(current);
     }
 
     fn update_appearance(&self) {
