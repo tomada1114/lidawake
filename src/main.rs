@@ -1,6 +1,8 @@
 mod app;
 mod audio;
+mod auto_mute;
 mod command;
+mod lid;
 mod power;
 mod quiet_hours;
 
